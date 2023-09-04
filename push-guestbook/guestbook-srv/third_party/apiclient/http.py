@@ -295,7 +295,7 @@ class MediaIoBaseUpload(MediaUpload):
     super(MediaIoBaseUpload, self).__init__()
     self._fd = fd
     self._mimetype = mimetype
-    if not (chunksize == -1 or chunksize > 0):
+    if chunksize != -1 and chunksize <= 0:
       raise InvalidChunkSizeError()
     self._chunksize = chunksize
     self._resumable = resumable
@@ -529,20 +529,19 @@ class MediaIoBaseDownload(object):
     if resp.status in [301, 302, 303, 307, 308] and 'location' in resp:
         self._uri = resp['location']
         resp, content = http.request(self._uri, headers=headers)
-    if resp.status in [200, 206]:
-      self._progress += len(content)
-      self._fd.write(content)
-
-      if 'content-range' in resp:
-        content_range = resp['content-range']
-        length = content_range.rsplit('/', 1)[1]
-        self._total_size = int(length)
-
-      if self._progress == self._total_size:
-        self._done = True
-      return MediaDownloadProgress(self._progress, self._total_size), self._done
-    else:
+    if resp.status not in [200, 206]:
       raise HttpError(resp, content, uri=self._uri)
+    self._progress += len(content)
+    self._fd.write(content)
+
+    if 'content-range' in resp:
+      content_range = resp['content-range']
+      length = content_range.rsplit('/', 1)[1]
+      self._total_size = int(length)
+
+    if self._progress == self._total_size:
+      self._done = True
+    return MediaDownloadProgress(self._progress, self._total_size), self._done
 
 
 class _StreamSlice(object):
@@ -712,11 +711,7 @@ class HttpRequest(object):
     if http is None:
       http = self.http
 
-    if self.resumable.size() is None:
-      size = '*'
-    else:
-      size = str(self.resumable.size())
-
+    size = '*' if self.resumable.size() is None else str(self.resumable.size())
     if self.resumable_uri is None:
       start_headers = copy.copy(self.headers)
       start_headers['X-Upload-Content-Type'] = self.resumable.mimetype()
@@ -735,10 +730,7 @@ class HttpRequest(object):
       # If we are in an error state then query the server for current state of
       # the upload by sending an empty PUT and reading the 'range' header in
       # the response.
-      headers = {
-          'Content-Range': 'bytes */%s' % size,
-          'content-length': '0'
-          }
+      headers = {'Content-Range': f'bytes */{size}', 'content-length': '0'}
       resp, content = http.request(self.resumable_uri, 'PUT',
                                    headers=headers)
       status, body = self._process_response(resp, content)
@@ -959,7 +951,7 @@ class BatchHttpRequest(object):
     if self._base_id is None:
       self._base_id = uuid.uuid4()
 
-    return '<%s+%s>' % (self._base_id, urllib.quote(id_))
+    return f'<{self._base_id}+{urllib.quote(id_)}>'
 
   def _header_to_id(self, header):
     """Convert a Content-ID header value to an id.
@@ -977,9 +969,9 @@ class BatchHttpRequest(object):
       BatchError if the header is not in the expected format.
     """
     if header[0] != '<' or header[-1] != '>':
-      raise BatchError("Invalid value for Content-ID: %s" % header)
+      raise BatchError(f"Invalid value for Content-ID: {header}")
     if '+' not in header:
-      raise BatchError("Invalid value for Content-ID: %s" % header)
+      raise BatchError(f"Invalid value for Content-ID: {header}")
     base, id_ = header[1:-1].rsplit('+', 1)
 
     return urllib.unquote(id_)
@@ -998,7 +990,7 @@ class BatchHttpRequest(object):
     request_line = urlparse.urlunparse(
         (None, None, parsed.path, parsed.params, parsed.query, None)
         )
-    status_line = request.method + ' ' + request_line + ' HTTP/1.1\n'
+    status_line = f'{request.method} {request_line}' + ' HTTP/1.1\n'
     major, minor = request.headers.get('content-type', 'application/json').split('/')
     msg = MIMENonMultipart(major, minor)
     headers = request.headers.copy()
@@ -1108,7 +1100,7 @@ class BatchHttpRequest(object):
     if request.resumable is not None:
       raise BatchError("Media requests cannot be used in a batch request.")
     if request_id in self._requests:
-      raise KeyError("A request with this ID already exists: %s" % request_id)
+      raise KeyError(f"A request with this ID already exists: {request_id}")
     self._requests[request_id] = request
     self._callbacks[request_id] = callback
     self._order.append(request_id)
@@ -1144,10 +1136,10 @@ class BatchHttpRequest(object):
 
     body = message.as_string()
 
-    headers = {}
-    headers['content-type'] = ('multipart/mixed; '
-                               'boundary="%s"') % message.get_boundary()
-
+    headers = {
+        'content-type': ('multipart/mixed; '
+                         'boundary="%s"' % message.get_boundary())
+    }
     resp, content = http.request(self._batch_uri, 'POST', body=body,
                                  headers=headers)
 
@@ -1419,10 +1411,7 @@ class HttpMockSequence(object):
     elif content == 'echo_request_headers_as_json':
       content = simplejson.dumps(headers)
     elif content == 'echo_request_body':
-      if hasattr(body, 'read'):
-        content = body.read()
-      else:
-        content = body
+      content = body.read() if hasattr(body, 'read') else body
     elif content == 'echo_request_uri':
       content = uri
     return httplib2.Response(resp), content
@@ -1451,13 +1440,13 @@ def set_user_agent(http, user_agent):
 
   # The closure that will replace 'httplib2.Http.request'.
   def new_request(uri, method='GET', body=None, headers=None,
-                  redirections=httplib2.DEFAULT_MAX_REDIRECTS,
-                  connection_type=None):
+                    redirections=httplib2.DEFAULT_MAX_REDIRECTS,
+                    connection_type=None):
     """Modify the request headers to add the user-agent."""
     if headers is None:
       headers = {}
     if 'user-agent' in headers:
-      headers['user-agent'] = user_agent + ' ' + headers['user-agent']
+      headers['user-agent'] = f'{user_agent} ' + headers['user-agent']
     else:
       headers['user-agent'] = user_agent
     resp, content = request_orig(uri, method, body, headers,

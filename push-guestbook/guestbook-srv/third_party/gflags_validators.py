@@ -128,7 +128,7 @@ class SimpleValidator(Validator):
     return [self.flag_name]
 
   def PrintFlagsWithValues(self, flag_values):
-    return 'flag --%s=%s' % (self.flag_name, flag_values[self.flag_name].value)
+    return f'flag --{self.flag_name}={flag_values[self.flag_name].value}'
 
   def _GetInputToCheckerFunction(self, flag_values):
     """Given flag values, construct the input to be given to checker.
@@ -178,9 +178,9 @@ class DictionaryValidator(Validator):
 
   def PrintFlagsWithValues(self, flag_values):
     prefix = 'flags '
-    flags_with_values = []
-    for key in self.flag_names:
-      flags_with_values.append('%s=%s' % (key, flag_values[key].value))
+    flags_with_values = [
+        f'{key}={flag_values[key].value}' for key in self.flag_names
+    ]
     return prefix + ', '.join(flags_with_values)
 
   def GetFlagsNames(self):

@@ -41,8 +41,7 @@ def SendMessages(post_data):
   storage = StorageByKeyName(AdminCredentialsModel,
                              'theadminaccount',
                              'credentials')
-  credentials = storage.get()
-  if credentials:
+  if credentials := storage.get():
     try:
       api_http = credentials.authorize(httplib2.Http())
       for data in post_data:
@@ -135,8 +134,7 @@ class Monitor(webapp2.RequestHandler):
       elif not follower.verified:
         self.SendVerificationMessage(follower)
       response = {'status': 'ok'}
-      last_message = Greeting.all().order('-date').fetch(1)
-      if last_message:
+      if last_message := Greeting.all().order('-date').fetch(1):
         response['lastMessage'] = last_message[0].content
       self.response.out.write(json.dumps(response))
       return

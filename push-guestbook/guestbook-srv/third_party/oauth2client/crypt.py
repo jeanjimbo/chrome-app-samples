@@ -188,9 +188,8 @@ def verify_signed_jwt_with_certs(jwt, certs, audience):
   segments = jwt.split('.')
 
   if (len(segments) != 3):
-    raise AppIdentityError(
-      'Wrong number of segments in token: %s' % jwt)
-  signed = '%s.%s' % (segments[0], segments[1])
+    raise AppIdentityError(f'Wrong number of segments in token: {jwt}')
+  signed = f'{segments[0]}.{segments[1]}'
 
   signature = _urlsafe_b64decode(segments[2])
 
@@ -209,22 +208,21 @@ def verify_signed_jwt_with_certs(jwt, certs, audience):
       verified = True
       break
   if not verified:
-    raise AppIdentityError('Invalid token signature: %s' % jwt)
+    raise AppIdentityError(f'Invalid token signature: {jwt}')
 
   # Check creation timestamp.
   iat = parsed.get('iat')
   if iat is None:
-    raise AppIdentityError('No iat field in token: %s' % json_body)
+    raise AppIdentityError(f'No iat field in token: {json_body}')
   earliest = iat - CLOCK_SKEW_SECS
 
   # Check expiration timestamp.
   now = long(time.time())
   exp = parsed.get('exp')
   if exp is None:
-    raise AppIdentityError('No exp field in token: %s' % json_body)
+    raise AppIdentityError(f'No exp field in token: {json_body}')
   if exp >= now + MAX_TOKEN_LIFETIME_SECS:
-    raise AppIdentityError(
-      'exp field too far in future: %s' % json_body)
+    raise AppIdentityError(f'exp field too far in future: {json_body}')
   latest = exp + CLOCK_SKEW_SECS
 
   if now < earliest:
@@ -238,9 +236,8 @@ def verify_signed_jwt_with_certs(jwt, certs, audience):
   if audience is not None:
     aud = parsed.get('aud')
     if aud is None:
-      raise AppIdentityError('No aud field in token: %s' % json_body)
+      raise AppIdentityError(f'No aud field in token: {json_body}')
     if aud != audience:
-      raise AppIdentityError('Wrong recipient, %s != %s: %s' %
-          (aud, audience, json_body))
+      raise AppIdentityError(f'Wrong recipient, {aud} != {audience}: {json_body}')
 
   return parsed

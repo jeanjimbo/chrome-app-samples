@@ -43,7 +43,7 @@ class Storage(BaseStorage):
   def _validate_file(self):
     if os.path.islink(self._filename):
       raise CredentialsFileSymbolicLinkError(
-          'File: %s is a symbolic link.' % self._filename)
+          f'File: {self._filename} is a symbolic link.')
 
   def acquire_lock(self):
     """Acquires any lock necessary to access this Storage.
@@ -71,9 +71,8 @@ class Storage(BaseStorage):
     credentials = None
     self._validate_file()
     try:
-      f = open(self._filename, 'rb')
-      content = f.read()
-      f.close()
+      with open(self._filename, 'rb') as f:
+        content = f.read()
     except IOError:
       return credentials
 
@@ -110,9 +109,8 @@ class Storage(BaseStorage):
 
     self._create_file_if_needed()
     self._validate_file()
-    f = open(self._filename, 'wb')
-    f.write(credentials.to_json())
-    f.close()
+    with open(self._filename, 'wb') as f:
+      f.write(credentials.to_json())
 
   def locked_delete(self):
     """Delete Credentials file.
