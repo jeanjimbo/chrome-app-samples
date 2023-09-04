@@ -56,7 +56,7 @@ def encode(c):
     for low, high in escape_range:
         if i < low:
             break
-        if i >= low and i <= high:
+        if i <= high:
             retval = "".join(["%%%2X" % ord(o) for o in c.encode('utf-8')])
             break
     return retval

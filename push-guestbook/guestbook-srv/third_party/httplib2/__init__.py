@@ -69,10 +69,7 @@ try:
     ssl_SSLError = ssl.SSLError
     def _ssl_wrap_socket(sock, key_file, cert_file,
                          disable_validation, ca_certs):
-        if disable_validation:
-            cert_reqs = ssl.CERT_NONE
-        else:
-            cert_reqs = ssl.CERT_REQUIRED
+        cert_reqs = ssl.CERT_NONE if disable_validation else ssl.CERT_REQUIRED
         # We should be specifying SSL version 3 or TLS v1, but the ssl module
         # doesn't expose the necessary knobs. So we need to go with the default
         # of SSLv23.
@@ -207,7 +204,7 @@ def parse_uri(uri):
 def urlnorm(uri):
     (scheme, authority, path, query, fragment) = parse_uri(uri)
     if not scheme or not authority:
-        raise RelativeURIError("Only absolute URIs are allowed. uri = %s" % uri)
+        raise RelativeURIError(f"Only absolute URIs are allowed. uri = {uri}")
     authority = authority.lower()
     scheme = scheme.lower()
     if not path:
@@ -216,7 +213,7 @@ def urlnorm(uri):
     # computing the digest. See Section 6.2.2 of Std 66.
     request_uri = query and "?".join([path, query]) or path
     scheme = scheme.lower()
-    defrag_uri = scheme + "://" + authority + request_uri
+    defrag_uri = f"{scheme}://{authority}{request_uri}"
     return scheme, authority, request_uri, defrag_uri
 
 
@@ -235,9 +232,7 @@ def safename(filename):
         if re_url_scheme.match(filename):
             if isinstance(filename,str):
                 filename = filename.decode('utf-8')
-                filename = filename.encode('idna')
-            else:
-                filename = filename.encode('idna')
+            filename = filename.encode('idna')
     except UnicodeError:
         pass
     if isinstance(filename,unicode):
@@ -259,8 +254,14 @@ def _parse_cache_control(headers):
     retval = {}
     if headers.has_key('cache-control'):
         parts =  headers['cache-control'].split(',')
-        parts_with_args = [tuple([x.strip().lower() for x in part.split("=", 1)]) for part in parts if -1 != part.find("=")]
-        parts_wo_args = [(name.strip().lower(), 1) for name in parts if -1 == name.find("=")]
+        parts_with_args = [
+            tuple(x.strip().lower() for x in part.split("=", 1))
+            for part in parts
+            if part.find("=") != -1
+        ]
+        parts_wo_args = [
+            (name.strip().lower(), 1) for name in parts if name.find("=") == -1
+        ]
         retval = dict(parts_with_args + parts_wo_args)
     return retval
 
@@ -361,7 +362,7 @@ def _entry_disposition(response_headers, request_headers):
                 freshness_lifetime = 0
         elif response_headers.has_key('expires'):
             expires = email.Utils.parsedate_tz(response_headers['expires'])
-            if None == expires:
+            if expires is None:
                 freshness_lifetime = 0
             else:
                 freshness_lifetime = max(0, calendar.timegm(expires) - date)
@@ -401,48 +402,48 @@ def _decompressContent(response, new_content):
     return content
 
 def _updateCache(request_headers, response_headers, content, cache, cachekey):
-    if cachekey:
-        cc = _parse_cache_control(request_headers)
-        cc_response = _parse_cache_control(response_headers)
-        if cc.has_key('no-store') or cc_response.has_key('no-store'):
-            cache.delete(cachekey)
-        else:
-            info = email.Message.Message()
-            for key, value in response_headers.iteritems():
-                if key not in ['status','content-encoding','transfer-encoding']:
-                    info[key] = value
+    if not cachekey:
+        return
+    cc = _parse_cache_control(request_headers)
+    cc_response = _parse_cache_control(response_headers)
+    if cc.has_key('no-store') or cc_response.has_key('no-store'):
+        cache.delete(cachekey)
+    else:
+        info = email.Message.Message()
+        for key, value in response_headers.iteritems():
+            if key not in ['status','content-encoding','transfer-encoding']:
+                info[key] = value
 
-            # Add annotations to the cache to indicate what headers
-            # are variant for this request.
-            vary = response_headers.get('vary', None)
-            if vary:
-                vary_headers = vary.lower().replace(' ', '').split(',')
-                for header in vary_headers:
-                    key = '-varied-%s' % header
-                    try:
-                        info[key] = request_headers[header]
-                    except KeyError:
-                        pass
+        if vary := response_headers.get('vary', None):
+            vary_headers = vary.lower().replace(' ', '').split(',')
+            for header in vary_headers:
+                key = f'-varied-{header}'
+                try:
+                    info[key] = request_headers[header]
+                except KeyError:
+                    pass
 
-            status = response_headers.status
-            if status == 304:
-                status = 200
+        status = response_headers.status
+        if status == 304:
+            status = 200
 
-            status_header = 'status: %d\r\n' % status
+        status_header = 'status: %d\r\n' % status
 
-            header_str = info.as_string()
+        header_str = info.as_string()
 
-            header_str = re.sub("\r(?!\n)|(?<!\r)\n", "\r\n", header_str)
-            text = "".join([status_header, header_str, content])
+        header_str = re.sub("\r(?!\n)|(?<!\r)\n", "\r\n", header_str)
+        text = "".join([status_header, header_str, content])
 
-            cache.set(cachekey, text)
+        cache.set(cachekey, text)
 
 def _cnonce():
-    dig = _md5("%s:%s" % (time.ctime(), ["0123456789"[random.randrange(0, 9)] for i in range(20)])).hexdigest()
+    dig = _md5(
+        f'{time.ctime()}:{["0123456789"[random.randrange(0, 9)] for _ in range(20)]}'
+    ).hexdigest()
     return dig[:16]
 
 def _wsse_username_token(cnonce, iso_now, password):
-    return base64.b64encode(_sha("%s%s%s" % (cnonce, iso_now, password)).digest()).strip()
+    return base64.b64encode(_sha(f"{cnonce}{iso_now}{password}").digest()).strip()
 
 
 # For credentials we need two things, first
@@ -505,26 +506,33 @@ class DigestAuthentication(Authentication):
         challenge = _parse_www_authenticate(response, 'www-authenticate')
         self.challenge = challenge['digest']
         qop = self.challenge.get('qop', 'auth')
-        self.challenge['qop'] = ('auth' in [x.strip() for x in qop.split()]) and 'auth' or None
+        self.challenge['qop'] = (
+            'auth' if 'auth' in [x.strip() for x in qop.split()] else None
+        )
         if self.challenge['qop'] is None:
-            raise UnimplementedDigestAuthOptionError( _("Unsupported value for qop: %s." % qop))
+            raise UnimplementedDigestAuthOptionError(
+                _(f"Unsupported value for qop: {qop}.")
+            )
         self.challenge['algorithm'] = self.challenge.get('algorithm', 'MD5').upper()
         if self.challenge['algorithm'] != 'MD5':
-            raise UnimplementedDigestAuthOptionError( _("Unsupported value for algorithm: %s." % self.challenge['algorithm']))
+            raise UnimplementedDigestAuthOptionError(
+                _(
+                    f"Unsupported value for algorithm: {self.challenge['algorithm']}."
+                )
+            )
         self.A1 = "".join([self.credentials[0], ":", self.challenge['realm'], ":", self.credentials[1]])
         self.challenge['nc'] = 1
 
     def request(self, method, request_uri, headers, content, cnonce = None):
         """Modify the request headers"""
         H = lambda x: _md5(x).hexdigest()
-        KD = lambda s, d: H("%s:%s" % (s, d))
+        KD = lambda s, d: H(f"{s}:{d}")
         A2 = "".join([method, ":", request_uri])
         self.challenge['cnonce'] = cnonce or _cnonce()
-        request_digest  = '"%s"' % KD(H(self.A1), "%s:%s:%s:%s:%s" % (self.challenge['nonce'],
-                    '%08x' % self.challenge['nc'],
-                    self.challenge['cnonce'],
-                    self.challenge['qop'], H(A2)
-                    ))
+        request_digest = '"%s"' % KD(
+            H(self.A1),
+            f"{self.challenge['nonce']}:{'%08x' % self.challenge['nc']}:{self.challenge['cnonce']}:{self.challenge['qop']}:{H(A2)}",
+        )
         headers['authorization'] = 'Digest username="%s", realm="%s", nonce="%s", uri="%s", algorithm=%s, response=%s, qop=%s, nc=%08x, cnonce="%s"' % (
                 self.credentials[0],
                 self.challenge['realm'],
@@ -537,13 +545,13 @@ class DigestAuthentication(Authentication):
                 self.challenge['cnonce'],
                 )
         if self.challenge.get('opaque'):
-            headers['authorization'] += ', opaque="%s"' % self.challenge['opaque']
+            headers['authorization'] += f""", opaque="{self.challenge['opaque']}\""""
         self.challenge['nc'] += 1
 
     def response(self, response, content):
         if not response.has_key('authentication-info'):
             challenge = _parse_www_authenticate(response, 'www-authenticate').get('digest', {})
-            if 'true' == challenge.get('stale'):
+            if challenge.get('stale') == 'true':
                 self.challenge['nonce'] = challenge['nonce']
                 self.challenge['nc'] = 1
                 return True
@@ -573,18 +581,20 @@ class HmacDigestAuthentication(Authentication):
             raise UnimplementedHmacDigestAuthOptionError( _("The challenge doesn't contain a server nonce, or this one is empty."))
         self.challenge['algorithm'] = self.challenge.get('algorithm', 'HMAC-SHA-1')
         if self.challenge['algorithm'] not in ['HMAC-SHA-1', 'HMAC-MD5']:
-            raise UnimplementedHmacDigestAuthOptionError( _("Unsupported value for algorithm: %s." % self.challenge['algorithm']))
+            raise UnimplementedHmacDigestAuthOptionError(
+                _(
+                    f"Unsupported value for algorithm: {self.challenge['algorithm']}."
+                )
+            )
         self.challenge['pw-algorithm'] = self.challenge.get('pw-algorithm', 'SHA-1')
         if self.challenge['pw-algorithm'] not in ['SHA-1', 'MD5']:
-            raise UnimplementedHmacDigestAuthOptionError( _("Unsupported value for pw-algorithm: %s." % self.challenge['pw-algorithm']))
-        if self.challenge['algorithm'] == 'HMAC-MD5':
-            self.hashmod = _md5
-        else:
-            self.hashmod = _sha
-        if self.challenge['pw-algorithm'] == 'MD5':
-            self.pwhashmod = _md5
-        else:
-            self.pwhashmod = _sha
+            raise UnimplementedHmacDigestAuthOptionError(
+                _(
+                    f"Unsupported value for pw-algorithm: {self.challenge['pw-algorithm']}."
+                )
+            )
+        self.hashmod = _md5 if self.challenge['algorithm'] == 'HMAC-MD5' else _sha
+        self.pwhashmod = _md5 if self.challenge['pw-algorithm'] == 'MD5' else _sha
         self.key = "".join([self.credentials[0], ":",
                     self.pwhashmod.new("".join([self.credentials[1], self.challenge['salt']])).hexdigest().lower(),
                     ":", self.challenge['realm']
@@ -594,28 +604,19 @@ class HmacDigestAuthentication(Authentication):
     def request(self, method, request_uri, headers, content):
         """Modify the request headers"""
         keys = _get_end2end_headers(headers)
-        keylist = "".join(["%s " % k for k in keys])
+        keylist = "".join([f"{k} " for k in keys])
         headers_val = "".join([headers[k] for k in keys])
         created = time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime())
         cnonce = _cnonce()
-        request_digest = "%s:%s:%s:%s:%s" % (method, request_uri, cnonce, self.challenge['snonce'], headers_val)
+        request_digest = f"{method}:{request_uri}:{cnonce}:{self.challenge['snonce']}:{headers_val}"
         request_digest  = hmac.new(self.key, request_digest, self.hashmod).hexdigest().lower()
-        headers['authorization'] = 'HMACDigest username="%s", realm="%s", snonce="%s", cnonce="%s", uri="%s", created="%s", response="%s", headers="%s"' % (
-                self.credentials[0],
-                self.challenge['realm'],
-                self.challenge['snonce'],
-                cnonce,
-                request_uri,
-                created,
-                request_digest,
-                keylist,
-                )
+        headers[
+            'authorization'
+        ] = f"""HMACDigest username="{self.credentials[0]}", realm="{self.challenge['realm']}", snonce="{self.challenge['snonce']}", cnonce="{cnonce}", uri="{request_uri}", created="{created}", response="{request_digest}", headers="{keylist}\""""
 
     def response(self, response, content):
         challenge = _parse_www_authenticate(response, 'www-authenticate').get('hmacdigest', {})
-        if challenge.get('reason') in ['integrity', 'stale']:
-            return True
-        return False
+        return challenge.get('reason') in ['integrity', 'stale']
 
 
 class WsseAuthentication(Authentication):
@@ -636,11 +637,9 @@ class WsseAuthentication(Authentication):
         iso_now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         cnonce = _cnonce()
         password_digest = _wsse_username_token(cnonce, iso_now, self.credentials[1])
-        headers['X-WSSE'] = 'UsernameToken Username="%s", PasswordDigest="%s", Nonce="%s", Created="%s"' % (
-                self.credentials[0],
-                password_digest,
-                cnonce,
-                iso_now)
+        headers[
+            'X-WSSE'
+        ] = f'UsernameToken Username="{self.credentials[0]}", PasswordDigest="{password_digest}", Nonce="{cnonce}", Created="{iso_now}"'
 
 class GoogleLoginAuthentication(Authentication):
     def __init__(self, credentials, host, request_uri, headers, response, content, http):
@@ -660,15 +659,12 @@ class GoogleLoginAuthentication(Authentication):
         resp, content = self.http.request("https://www.google.com/accounts/ClientLogin", method="POST", body=urlencode(auth), headers={'Content-Type': 'application/x-www-form-urlencoded'})
         lines = content.split('\n')
         d = dict([tuple(line.split("=", 1)) for line in lines if line])
-        if resp.status == 403:
-            self.Auth = ""
-        else:
-            self.Auth = d['Auth']
+        self.Auth = "" if resp.status == 403 else d['Auth']
 
     def request(self, method, request_uri, headers, content):
         """Modify the request headers to add the appropriate
         Authorization header."""
-        headers['authorization'] = 'GoogleLogin Auth=' + self.Auth
+        headers['authorization'] = f'GoogleLogin Auth={self.Auth}'
 
 
 AUTH_SCHEME_CLASSES = {
@@ -771,7 +767,7 @@ class ProxyInfo(object):
         if method not in ['http', 'https']:
           return
 
-        env_var = method + '_proxy'
+        env_var = f'{method}_proxy'
         url = os.environ.get(env_var, os.environ.get(env_var.upper()))
         if not url:
           return
@@ -810,11 +806,7 @@ class ProxyInfo(object):
         else:
           host = host_port
 
-        if port:
-            port = int(port)
-        else:
-            port = dict(https=443, http=80)[method]
-
+        port = int(port) if port else dict(https=443, http=80)[method]
         proxy_type = 3 # socks.PROXY_TYPE_HTTP
         return cls(
             proxy_type = proxy_type,
@@ -975,7 +967,7 @@ class HTTPSConnectionWithTimeout(httplib.HTTPSConnection):
         hosts = self._GetValidHostsForCert(cert)
         for host in hosts:
             host_re = host.replace('.', '\.').replace('*', '[^.]*')
-            if re.search('^%s$' % (host_re,), hostname, re.I):
+            if re.search(f'^{host_re}$', hostname, re.I):
                 return True
         return False
 
@@ -1096,31 +1088,31 @@ try:
       self.sock = True
 
     def request(self, method, url, body, headers):
-      # Calculate the absolute URI, which fetch requires
-      netloc = self.host
-      if self.port:
-        netloc = '%s:%s' % (self.host, self.port)
-      absolute_uri = '%s://%s%s' % (self.scheme, netloc, url)
-      try:
-        try: # 'body' can be a stream.
-          body = body.read()
-        except AttributeError:
-          pass
-        response = fetch(absolute_uri, payload=body, method=method,
-            headers=headers, allow_truncated=False, follow_redirects=False,
-            deadline=self.timeout,
-            validate_certificate=self.validate_certificate)
-        self.response = ResponseDict(response.headers)
-        self.response['status'] = str(response.status_code)
-        self.response['reason'] = httplib.responses.get(response.status_code, 'Ok')
-        self.response.status = response.status_code
-        setattr(self.response, 'read', lambda : response.content)
+        # Calculate the absolute URI, which fetch requires
+        netloc = self.host
+        if self.port:
+            netloc = f'{self.host}:{self.port}'
+        absolute_uri = f'{self.scheme}://{netloc}{url}'
+        try:
+          try: # 'body' can be a stream.
+            body = body.read()
+          except AttributeError:
+            pass
+          response = fetch(absolute_uri, payload=body, method=method,
+              headers=headers, allow_truncated=False, follow_redirects=False,
+              deadline=self.timeout,
+              validate_certificate=self.validate_certificate)
+          self.response = ResponseDict(response.headers)
+          self.response['status'] = str(response.status_code)
+          self.response['reason'] = httplib.responses.get(response.status_code, 'Ok')
+          self.response.status = response.status_code
+          setattr(self.response, 'read', lambda : response.content)
 
-      # Make sure the exceptions raised match the exceptions expected.
-      except InvalidURLError:
-        raise socket.gaierror('')
-      except (DownloadError, ResponseTooLargeError, SSLCertificateError):
-        raise httplib.HTTPException()
+        # Make sure the exceptions raised match the exceptions expected.
+        except InvalidURLError:
+          raise socket.gaierror('')
+        except (DownloadError, ResponseTooLargeError, SSLCertificateError):
+          raise httplib.HTTPException()
 
     def getresponse(self):
       if self.response:
@@ -1352,41 +1344,38 @@ and more.
 
         if (self.follow_all_redirects or (method in ["GET", "HEAD"]) or response.status == 303):
             if self.follow_redirects and response.status in [300, 301, 302, 303, 307]:
-                # Pick out the location header and basically start from the beginning
-                # remembering first to strip the ETag header and decrement our 'depth'
-                if redirections:
-                    if not response.has_key('location') and response.status != 300:
-                        raise RedirectMissingLocation( _("Redirected but the response is missing a Location: header."), response, content)
-                    # Fix-up relative redirects (which violate an RFC 2616 MUST)
-                    if response.has_key('location'):
-                        location = response['location']
-                        (scheme, authority, path, query, fragment) = parse_uri(location)
-                        if authority == None:
-                            response['location'] = urlparse.urljoin(absolute_uri, location)
-                    if response.status == 301 and method in ["GET", "HEAD"]:
-                        response['-x-permanent-redirect-url'] = response['location']
-                        if not response.has_key('content-location'):
-                            response['content-location'] = absolute_uri
-                        _updateCache(headers, response, content, self.cache, cachekey)
-                    if headers.has_key('if-none-match'):
-                        del headers['if-none-match']
-                    if headers.has_key('if-modified-since'):
-                        del headers['if-modified-since']
-                    if 'authorization' in headers and not self.forward_authorization_headers:
-                        del headers['authorization']
-                    if response.has_key('location'):
-                        location = response['location']
-                        old_response = copy.deepcopy(response)
-                        if not old_response.has_key('content-location'):
-                            old_response['content-location'] = absolute_uri
-                        redirect_method = method
-                        if response.status in [302, 303]:
-                            redirect_method = "GET"
-                            body = None
-                        (response, content) = self.request(location, redirect_method, body=body, headers = headers, redirections = redirections - 1)
-                        response.previous = old_response
-                else:
+                if not redirections:
                     raise RedirectLimit("Redirected more times than rediection_limit allows.", response, content)
+                if not response.has_key('location') and response.status != 300:
+                    raise RedirectMissingLocation( _("Redirected but the response is missing a Location: header."), response, content)
+                    # Fix-up relative redirects (which violate an RFC 2616 MUST)
+                if response.has_key('location'):
+                    location = response['location']
+                    (scheme, authority, path, query, fragment) = parse_uri(location)
+                    if authority is None:
+                        response['location'] = urlparse.urljoin(absolute_uri, location)
+                if response.status == 301 and method in ["GET", "HEAD"]:
+                    response['-x-permanent-redirect-url'] = response['location']
+                    if not response.has_key('content-location'):
+                        response['content-location'] = absolute_uri
+                    _updateCache(headers, response, content, self.cache, cachekey)
+                if headers.has_key('if-none-match'):
+                    del headers['if-none-match']
+                if headers.has_key('if-modified-since'):
+                    del headers['if-modified-since']
+                if 'authorization' in headers and not self.forward_authorization_headers:
+                    del headers['authorization']
+                if response.has_key('location'):
+                    location = response['location']
+                    old_response = copy.deepcopy(response)
+                    if not old_response.has_key('content-location'):
+                        old_response['content-location'] = absolute_uri
+                    redirect_method = method
+                    if response.status in [302, 303]:
+                        redirect_method = "GET"
+                        body = None
+                    (response, content) = self.request(location, redirect_method, body=body, headers = headers, redirections = redirections - 1)
+                    response.previous = old_response
             elif response.status in [200, 203] and method in ["GET", "HEAD"]:
                 # Don't cache 206's since we aren't going to handle byte range requests
                 if not response.has_key('content-location'):

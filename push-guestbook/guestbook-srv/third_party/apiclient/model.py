@@ -173,7 +173,7 @@ class BaseModel(Model):
         if getattr(value, 'encode', False) and callable(value.encode):
           value = value.encode('utf-8')
         astuples.append((key, value))
-    return '?' + urllib.urlencode(astuples)
+    return f'?{urllib.urlencode(astuples)}'
 
   def _log_response(self, resp, content):
     """Logs debugging information about the response if requested."""
@@ -199,17 +199,11 @@ class BaseModel(Model):
       apiclient.errors.HttpError if a non 2xx response is received.
     """
     self._log_response(resp, content)
-    # Error handling is TBD, for example, do we retry
-    # for some operation/error combinations?
     if resp.status < 300:
-      if resp.status == 204:
-        # A 204: No Content response should be treated differently
-        # to all the other success states
-        return self.no_content_response
-      return self.deserialize(content)
-    else:
-      logging.debug('Content from bad request was: %s' % content)
-      raise HttpError(resp, content)
+      return (self.no_content_response
+              if resp.status == 204 else self.deserialize(content))
+    logging.debug(f'Content from bad request was: {content}')
+    raise HttpError(resp, content)
 
   def serialize(self, body_value):
     """Perform the actual Python object serialization.
@@ -375,9 +369,6 @@ def makepatch(original, modified):
       else:
         # In the case of simple types or arrays we just replace
         patch[key] = modified_value
-    else:
-      # Don't add anything to patch if there's no change
-      pass
   for key in modified:
     if key not in original:
       patch[key] = modified[key]

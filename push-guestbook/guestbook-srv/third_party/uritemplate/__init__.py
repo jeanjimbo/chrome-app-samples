@@ -13,25 +13,27 @@ VAR = re.compile(r"^(?P<varname>[^=\+\*:\^]+)((?P<explode>[\+\*])|(?P<partial>[:
 def _tostring(varname, value, explode, operator, safe=""):
   if type(value) == type([]):
     if explode == "+":
-      return ",".join([varname + "." + urllib.quote(x, safe) for x in value])
+      return ",".join([f"{varname}.{urllib.quote(x, safe)}" for x in value])
     else:
       return ",".join([urllib.quote(x, safe) for x in value])
-  if type(value) == type({}):
-    keys = value.keys()
-    keys.sort()
-    if explode == "+":
-      return ",".join([varname + "." + urllib.quote(key, safe) + "," + urllib.quote(value[key], safe) for key in keys])
-    else:
-      return ",".join([urllib.quote(key, safe) + "," + urllib.quote(value[key], safe) for key in keys])
-  else:
+  if type(value) != type({}):
     return urllib.quote(value, safe)
+  keys = value.keys()
+  keys.sort()
+  return (",".join([
+      f"{varname}.{urllib.quote(key, safe)},{urllib.quote(value[key], safe)}"
+      for key in keys
+  ]) if explode == "+" else ",".join([
+      f"{urllib.quote(key, safe)},{urllib.quote(value[key], safe)}"
+      for key in keys
+  ]))
 
 
 def _tostring_path(varname, value, explode, operator, safe=""):
   joiner = operator
   if type(value) == type([]):
     if explode == "+":
-      return joiner.join([varname + "." + urllib.quote(x, safe) for x in value])
+      return joiner.join([f"{varname}.{urllib.quote(x, safe)}" for x in value])
     elif explode == "*":
       return joiner.join([urllib.quote(x, safe) for x in value])
     else:
@@ -40,48 +42,57 @@ def _tostring_path(varname, value, explode, operator, safe=""):
     keys = value.keys()
     keys.sort()
     if explode == "+":
-      return joiner.join([varname + "." + urllib.quote(key, safe) + joiner + urllib.quote(value[key], safe) for key in keys])
+      return joiner.join([
+          f"{varname}.{urllib.quote(key, safe)}{joiner}{urllib.quote(value[key], safe)}"
+          for key in keys
+      ])
     elif explode == "*":
       return joiner.join([urllib.quote(key, safe) + joiner + urllib.quote(value[key], safe) for key in keys])
     else:
-      return ",".join([urllib.quote(key, safe) + "," + urllib.quote(value[key], safe) for key in keys])
+      return ",".join([
+          f"{urllib.quote(key, safe)},{urllib.quote(value[key], safe)}"
+          for key in keys
+      ])
   else:
-    if value:
-      return urllib.quote(value, safe)
-    else:
-      return ""
+    return urllib.quote(value, safe) if value else ""
 
 def _tostring_query(varname, value, explode, operator, safe=""):
   joiner = operator
   varprefix = ""
-  if operator == "?":
+  if joiner == "?":
     joiner = "&"
-    varprefix = varname + "="
+    varprefix = f"{varname}="
   if type(value) == type([]):
-    if 0 == len(value):
+    if len(value) == 0:
       return ""
     if explode == "+":
-      return joiner.join([varname + "=" + urllib.quote(x, safe) for x in value])
+      return joiner.join([f"{varname}={urllib.quote(x, safe)}" for x in value])
     elif explode == "*":
       return joiner.join([urllib.quote(x, safe) for x in value])
     else:
       return varprefix + ",".join([urllib.quote(x, safe) for x in value])
   elif type(value) == type({}):
-    if 0 == len(value):
+    if len(value) == 0:
       return ""
     keys = value.keys()
     keys.sort()
     if explode == "+":
-      return joiner.join([varname + "." + urllib.quote(key, safe) + "=" + urllib.quote(value[key], safe) for key in keys])
+      return joiner.join([
+          f"{varname}.{urllib.quote(key, safe)}={urllib.quote(value[key], safe)}"
+          for key in keys
+      ])
     elif explode == "*":
-      return joiner.join([urllib.quote(key, safe) + "=" + urllib.quote(value[key], safe) for key in keys])
+      return joiner.join([
+          f"{urllib.quote(key, safe)}={urllib.quote(value[key], safe)}"
+          for key in keys
+      ])
     else:
-      return varprefix + ",".join([urllib.quote(key, safe) + "," + urllib.quote(value[key], safe) for key in keys])
+      return varprefix + ",".join([
+          f"{urllib.quote(key, safe)},{urllib.quote(value[key], safe)}"
+          for key in keys
+      ])
   else:
-    if value:
-      return varname + "=" + urllib.quote(value, safe)
-    else:
-      return varname 
+    return f"{varname}={urllib.quote(value, safe)}" if value else varname 
 
 TOSTRING = {
     "" : _tostring,
@@ -139,9 +150,6 @@ def expand(template, vars):
       else:
         continue
       retval.append(TOSTRING[operator](varname, value, explode, operator, safe=safe))
-    if "".join(retval):
-      return prefix + joiner.join(retval)
-    else:
-      return ""
+    return prefix + joiner.join(retval) if "".join(retval) else ""
 
   return TEMPLATE.sub(_sub, template)

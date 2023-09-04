@@ -398,8 +398,8 @@ class OAuth2Credentials(Credentials):
     # The closure that will replace 'httplib2.Http.request'.
     @util.positional(1)
     def new_request(uri, method='GET', body=None, headers=None,
-                    redirections=httplib2.DEFAULT_MAX_REDIRECTS,
-                    connection_type=None):
+                      redirections=httplib2.DEFAULT_MAX_REDIRECTS,
+                      connection_type=None):
       if not self.access_token:
         logger.info('Attempting refresh to obtain initial access_token')
         self._refresh(request_orig)
@@ -412,7 +412,7 @@ class OAuth2Credentials(Credentials):
 
       if self.user_agent is not None:
         if 'user-agent' in headers:
-          headers['user-agent'] = self.user_agent + ' ' + headers['user-agent']
+          headers['user-agent'] = f'{self.user_agent} ' + headers['user-agent']
         else:
           headers['user-agent'] = self.user_agent
 
@@ -421,7 +421,7 @@ class OAuth2Credentials(Credentials):
 
       # Older API (GData) respond with 403
       if resp.status in [401, 403]:
-        logger.info('Refreshing due to a %s' % str(resp.status))
+        logger.info(f'Refreshing due to a {str(resp.status)}')
         self._refresh(request_orig)
         self.apply(headers)
         return request_orig(uri, method, body, headers,
@@ -452,7 +452,7 @@ class OAuth2Credentials(Credentials):
     Args:
       headers: dict, the headers to add the Authorization header to.
     """
-    headers['Authorization'] = 'Bearer ' + self.access_token
+    headers['Authorization'] = f'Bearer {self.access_token}'
 
   def to_json(self):
     return self._to_json(Credentials.NON_SERIALIZED_MEMBERS)
@@ -536,13 +536,12 @@ class OAuth2Credentials(Credentials):
 
   def _generate_refresh_request_body(self):
     """Generate the body that will be used in the refresh request."""
-    body = urllib.urlencode({
+    return urllib.urlencode({
         'grant_type': 'refresh_token',
         'client_id': self.client_id,
         'client_secret': self.client_secret,
         'refresh_token': self.refresh_token,
-        })
-    return body
+    })
 
   def _generate_refresh_request_headers(self):
     """Generate the headers that will be used in the refresh request."""
@@ -615,8 +614,8 @@ class OAuth2Credentials(Credentials):
     else:
       # An {'error':...} response body means the token is expired or revoked,
       # so we flag the credentials as such.
-      logger.info('Failed to retrieve access token: %s' % content)
-      error_msg = 'Invalid response %s.' % resp['status']
+      logger.info(f'Failed to retrieve access token: {content}')
+      error_msg = f"Invalid response {resp['status']}."
       try:
         d = simplejson.loads(content)
         if 'error' in d:
@@ -681,10 +680,7 @@ class AccessTokenCredentials(OAuth2Credentials):
   @classmethod
   def from_json(cls, s):
     data = simplejson.loads(s)
-    retval = AccessTokenCredentials(
-        data['access_token'],
-        data['user_agent'])
-    return retval
+    return AccessTokenCredentials(data['access_token'], data['user_agent'])
 
   def _refresh(self, http_request):
     raise AccessTokenCredentialsError(
@@ -728,13 +724,11 @@ class AssertionCredentials(OAuth2Credentials):
   def _generate_refresh_request_body(self):
     assertion = self._generate_assertion()
 
-    body = urllib.urlencode({
+    return urllib.urlencode({
         'assertion_type': self.assertion_type,
         'assertion': assertion,
         'grant_type': 'assertion',
-        })
-
-    return body
+    })
 
   def _generate_assertion(self):
     """Generate the assertion string that will be used in the access token
@@ -827,7 +821,7 @@ if HAS_OPENSSL:
           'exp': now + SignedJwtAssertionCredentials.MAX_TOKEN_LIFETIME_SECS,
           'iss': self.service_account_name
       }
-      payload.update(self.kwargs)
+      payload |= self.kwargs
       logger.debug(str(payload))
 
       private_key = base64.b64decode(self.private_key)
@@ -865,11 +859,10 @@ if HAS_OPENSSL:
 
     resp, content = http.request(cert_uri)
 
-    if resp.status == 200:
-      certs = simplejson.loads(content)
-      return verify_signed_jwt_with_certs(id_token, certs, audience)
-    else:
+    if resp.status != 200:
       raise VerifyJwtTokenError('Status code: %d' % resp.status)
+    certs = simplejson.loads(content)
+    return verify_signed_jwt_with_certs(id_token, certs, audience)
 
 
 def _urlsafe_b64decode(b64string):
@@ -893,8 +886,7 @@ def _extract_id_token(id_token):
   segments = id_token.split('.')
 
   if (len(segments) != 3):
-    raise VerifyJwtTokenError(
-      'Wrong number of segments in token: %s' % id_token)
+    raise VerifyJwtTokenError(f'Wrong number of segments in token: {id_token}')
 
   return simplejson.loads(_urlsafe_b64decode(segments[1]))
 
@@ -956,8 +948,7 @@ def credentials_from_code(client_id, client_secret, scope, code,
                              auth_uri='https://accounts.google.com/o/oauth2/auth',
                              token_uri=token_uri)
 
-  credentials = flow.step2_exchange(code, http=http)
-  return credentials
+  return flow.step2_exchange(code, http=http)
 
 
 @util.positional(3)
@@ -998,8 +989,7 @@ def credentials_from_clientsecrets_and_code(filename, scope, code,
   """
   flow = flow_from_clientsecrets(filename, scope, message=message, cache=cache,
                                  redirect_uri=redirect_uri)
-  credentials = flow.step2_exchange(code, http=http)
-  return credentials
+  return flow.step2_exchange(code, http=http)
 
 
 class OAuth2WebServerFlow(Flow):
@@ -1044,8 +1034,7 @@ class OAuth2WebServerFlow(Flow):
     self.token_uri = token_uri
     self.params = {
         'access_type': 'offline',
-        }
-    self.params.update(kwargs)
+    } | kwargs
 
   @util.positional(1)
   def step1_get_authorize_url(self, redirect_uri=None):
@@ -1075,7 +1064,7 @@ class OAuth2WebServerFlow(Flow):
         'redirect_uri': self.redirect_uri,
         'scope': self.scope,
         }
-    query.update(self.params)
+    query |= self.params
     parts = list(urlparse.urlparse(self.auth_uri))
     query.update(dict(parse_qsl(parts[4]))) # 4 is the index of the query part
     parts[4] = urllib.urlencode(query)
@@ -1099,7 +1088,7 @@ class OAuth2WebServerFlow(Flow):
       refresh_token.
     """
 
-    if not (isinstance(code, str) or isinstance(code, unicode)):
+    if not (isinstance(code, (str, unicode))):
       if 'code' not in code:
         if 'error' in code:
           error_msg = code['error']
@@ -1147,12 +1136,12 @@ class OAuth2WebServerFlow(Flow):
                                self.token_uri, self.user_agent,
                                id_token=d.get('id_token', None))
     else:
-      logger.info('Failed to retrieve access token: %s' % content)
+      logger.info(f'Failed to retrieve access token: {content}')
       if 'error' in d:
         # you never know what those providers got to say
         error_msg = unicode(d['error'])
       else:
-        error_msg = 'Invalid response: %s.' % str(resp.status)
+        error_msg = f'Invalid response: {str(resp.status)}.'
       raise FlowExchangeError(error_msg)
 
 

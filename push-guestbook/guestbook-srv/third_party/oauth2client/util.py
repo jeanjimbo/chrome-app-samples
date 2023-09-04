@@ -115,13 +115,11 @@ def positional(max_positional_args):
           raise TypeError(message)
         elif FLAGS.positional_parameters_enforcement == 'WARNING':
           logger.warning(message)
-        else: # IGNORE
-          pass
       return wrapped(*args, **kwargs)
+
     return positional_wrapper
 
   if isinstance(max_positional_args, (int, long)):
     return positional_decorator
-  else:
-    args, _, _, defaults = inspect.getargspec(max_positional_args)
-    return positional(len(args) - len(defaults))(max_positional_args)
+  args, _, _, defaults = inspect.getargspec(max_positional_args)
+  return positional(len(args) - len(defaults))(max_positional_args)

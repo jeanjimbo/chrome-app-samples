@@ -66,8 +66,7 @@ class GenerateJWTSingleItemHandler(webapp.RequestHandler):
                            }
                 }
     token = jwt.encode(jwtInfo, SELLER_SECRET)
-    result = {'encodedJWT': token}
-    result['jwt'] = jwtInfo
+    result = {'encodedJWT': token, 'jwt': jwtInfo}
     self.response.headers['Content-Type'] = 'application/json'
     self.response.out.write(json.dumps(result))
 
@@ -101,8 +100,7 @@ class GenerateJWTSubscriptionHandler(webapp.RequestHandler):
                             }
                 }
     token = jwt.encode(jwtInfo, SELLER_SECRET)
-    result = {'encodedJWT': token}
-    result['jwt'] = jwtInfo
+    result = {'encodedJWT': token, 'jwt': jwtInfo}
     self.response.headers['Content-Type'] = 'application/json'
     self.response.out.write(json.dumps(result))
 
@@ -119,17 +117,17 @@ class PostbackHandler(webapp.RequestHandler):
       # http://github.com/progrium/pyjwt/issues/4
       decodedJWT = jwt.decode(str(encodedJWT), SELLER_SECRET)
       logging.info("Postback Handler")
-      logging.info("Encoded JWT: " + str(encodedJWT))
-      logging.info("Decoded JWT: " + str(decodedJWT))
+      logging.info(f"Encoded JWT: {str(encodedJWT)}")
+      logging.info(f"Decoded JWT: {str(decodedJWT)}")
       # validate the payment request and respond back to Google
       if decodedJWT['iss'] == 'Google' and decodedJWT['aud'] == SELLER_ID:
         if ('response' in decodedJWT and
             'orderId' in decodedJWT['response'] and
             'request' in decodedJWT):
-          
+
           orderId = decodedJWT['response']['orderId']
           requestInfo = decodedJWT['request']
-          
+
           pb = Postbacks(parent=postbacks_requestkey())
           pb.jwtPostback = encodedJWT
           pb.orderId = orderId
@@ -145,7 +143,7 @@ class PostbackHandler(webapp.RequestHandler):
             pb.currencyCode = requestInfo['initialPayment']['currencyCode']
             pb.recurrencePrice = requestInfo['recurrence']['price']
             pb.recurrenceFrequency = requestInfo['recurrence']['frequency']
-          
+
           pb.put()
 
           # respond back to complete payment

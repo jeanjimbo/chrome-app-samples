@@ -70,22 +70,22 @@ class ClientRedirectHandler(BaseHTTPServer.BaseHTTPRequestHandler):
   into the servers query_params and then stops serving.
   """
 
-  def do_GET(s):
+  def do_GET(self):
     """Handle a GET request.
 
     Parses the query parameters and prints a message
     if the flow has completed. Note that we can't detect
     if an error occurred.
     """
-    s.send_response(200)
-    s.send_header("Content-type", "text/html")
-    s.end_headers()
-    query = s.path.split('?', 1)[-1]
+    self.send_response(200)
+    self.send_header("Content-type", "text/html")
+    self.end_headers()
+    query = self.path.split('?', 1)[-1]
     query = dict(parse_qsl(query))
-    s.server.query_params = query
-    s.wfile.write("<html><head><title>Authentication Status</title></head>")
-    s.wfile.write("<body><p>The authentication flow has completed.</p>")
-    s.wfile.write("</body></html>")
+    self.server.query_params = query
+    self.wfile.write("<html><head><title>Authentication Status</title></head>")
+    self.wfile.write("<body><p>The authentication flow has completed.</p>")
+    self.wfile.write("</body></html>")
 
   def log_message(self, format, *args):
     """Do not log messages to stdout while running as command line program."""

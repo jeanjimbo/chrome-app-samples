@@ -79,7 +79,7 @@ RESERVED_WORDS = ['and', 'assert', 'break', 'class', 'continue', 'def', 'del',
 
 
 def fix_method_name(name):
-  """Fix method names to avoid reserved word conflicts.
+    """Fix method names to avoid reserved word conflicts.
 
   Args:
     name: string, method name.
@@ -87,14 +87,11 @@ def fix_method_name(name):
   Returns:
     The name with a '_' prefixed if the name is a reserved word.
   """
-  if name in RESERVED_WORDS:
-    return name + '_'
-  else:
-    return name
+    return f'{name}_' if name in RESERVED_WORDS else name
 
 
 def _add_query_parameter(url, name, value):
-  """Adds a query parameter to a url.
+    """Adds a query parameter to a url.
 
   Replaces the current value if it already exists in the URL.
 
@@ -106,9 +103,8 @@ def _add_query_parameter(url, name, value):
   Returns:
     Updated query parameter. Does not update the url if value is None.
   """
-  if value is None:
-    return url
-  else:
+    if value is None:
+        return url
     parsed = list(urlparse.urlparse(url))
     q = dict(parse_qsl(parsed[4]))
     q[name] = value
@@ -217,7 +213,7 @@ def build_from_document(
     developerKey=None,
     model=None,
     requestBuilder=HttpRequest):
-  """Create a Resource for interacting with an API.
+    """Create a Resource for interacting with an API.
 
   Same as `build()`, but constructs the Resource object from a discovery
   document that is it given, as opposed to retrieving one over HTTP.
@@ -240,24 +236,30 @@ def build_from_document(
     A Resource object with methods for interacting with the service.
   """
 
-  # future is no longer used.
-  future = {}
+    # future is no longer used.
+    future = {}
 
-  service = simplejson.loads(service)
-  base = urlparse.urljoin(service['rootUrl'], service['servicePath'])
-  schema = Schemas(service)
+    service = simplejson.loads(service)
+    base = urlparse.urljoin(service['rootUrl'], service['servicePath'])
+    schema = Schemas(service)
 
-  if model is None:
-    features = service.get('features', [])
-    model = JsonModel('dataWrapper' in features)
-  resource = _createResource(http, base, model, requestBuilder, developerKey,
-                       service, service, schema)
-
-  return resource
+    if model is None:
+      features = service.get('features', [])
+      model = JsonModel('dataWrapper' in features)
+    return _createResource(
+        http,
+        base,
+        model,
+        requestBuilder,
+        developerKey,
+        service,
+        service,
+        schema,
+    )
 
 
 def _cast(value, schema_type):
-  """Convert value to a string based on JSON Schema type.
+    """Convert value to a string based on JSON Schema type.
 
   See http://tools.ietf.org/html/draft-zyp-json-schema-03 for more details on
   JSON Schema.
@@ -269,22 +271,18 @@ def _cast(value, schema_type):
   Returns:
     A string representation of 'value' based on the schema_type.
   """
-  if schema_type == 'string':
-    if type(value) == type('') or type(value) == type(u''):
-      return value
+    if schema_type == 'string' or schema_type not in [
+        'integer',
+        'number',
+        'boolean',
+    ]:
+        return value if type(value) == type('') else str(value)
+    elif schema_type == 'integer':
+        return str(int(value))
+    elif schema_type == 'number':
+        return str(float(value))
     else:
-      return str(value)
-  elif schema_type == 'integer':
-    return str(int(value))
-  elif schema_type == 'number':
-    return str(float(value))
-  elif schema_type == 'boolean':
-    return str(bool(value)).lower()
-  else:
-    if type(value) == type('') or type(value) == type(u''):
-      return value
-    else:
-      return str(value)
+        return str(bool(value)).lower()
 
 
 MULTIPLIERS = {
@@ -296,7 +294,7 @@ MULTIPLIERS = {
 
 
 def _media_size_to_long(maxSize):
-  """Convert a string media size, such as 10GB or 3TB into an integer.
+    """Convert a string media size, such as 10GB or 3TB into an integer.
 
   Args:
     maxSize: string, size as a string, such as 2MB or 7GB.
@@ -304,14 +302,13 @@ def _media_size_to_long(maxSize):
   Returns:
     The size as an integer value.
   """
-  if len(maxSize) < 2:
-    return 0
-  units = maxSize[-2:].upper()
-  multiplier = MULTIPLIERS.get(units, 0)
-  if multiplier:
-    return int(maxSize[:-2]) * multiplier
-  else:
-    return int(maxSize)
+    if len(maxSize) < 2:
+      return 0
+    units = maxSize[-2:].upper()
+    if multiplier := MULTIPLIERS.get(units, 0):
+        return int(maxSize[:-2]) * multiplier
+    else:
+        return int(maxSize)
 
 
 def _createResource(http, baseUrl, model, requestBuilder,

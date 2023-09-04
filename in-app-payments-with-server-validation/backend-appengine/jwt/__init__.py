@@ -37,10 +37,11 @@ def header(jwt):
         raise DecodeError("Invalid header encoding")
 
 def encode(payload, key, algorithm='HS256'):
-    segments = []
     header = {"typ": "JWT", "alg": algorithm}
-    segments.append(base64url_encode(json.dumps(header)))
-    segments.append(base64url_encode(json.dumps(payload)))
+    segments = [
+        base64url_encode(json.dumps(header)),
+        base64url_encode(json.dumps(payload)),
+    ]
     signing_input = '.'.join(segments)
     try:
         ascii_key = unicode(key).encode('utf8')
@@ -65,7 +66,9 @@ def decode(jwt, key='', verify=True):
     if verify:
         try:
             ascii_key = unicode(key).encode('utf8')
-            if not signature == signing_methods[header['alg']](signing_input, ascii_key):
+            if signature != signing_methods[header['alg']](
+                signing_input, ascii_key
+            ):
                 raise DecodeError("Signature verification failed")
         except KeyError:
             raise DecodeError("Algorithm not supported")

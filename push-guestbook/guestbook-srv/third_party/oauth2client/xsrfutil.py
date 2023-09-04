@@ -60,10 +60,7 @@ def generate_token(key, user_id, action_id="", when=None):
   digester.update(str(when))
   digest = digester.digest()
 
-  token = base64.urlsafe_b64encode('%s%s%d' % (digest,
-                                               DELIMITER,
-                                               when))
-  return token
+  return base64.urlsafe_b64encode('%s%s%d' % (digest, DELIMITER, when))
 
 
 @util.positional(3)
@@ -100,7 +97,4 @@ def validate_token(key, token, user_id, action_id="", current_time=None):
   # The given token should match the generated one with the same time.
   expected_token = generate_token(key, user_id, action_id=action_id,
                                   when=token_time)
-  if token != expected_token:
-    return False
-
-  return True
+  return token == expected_token

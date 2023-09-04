@@ -180,9 +180,7 @@ class FlowProperty(db.Property):
 
   # For reading from datastore.
   def make_value_from_datastore(self, value):
-    if value is None:
-      return None
-    return pickle.loads(value)
+    return None if value is None else pickle.loads(value)
 
   def validate(self, value):
     if value is not None and not isinstance(value, Flow):
@@ -207,18 +205,15 @@ class CredentialsProperty(db.Property):
 
   # For writing to datastore.
   def get_value_for_datastore(self, model_instance):
-    logger.info("get: Got type " + str(type(model_instance)))
+    logger.info(f"get: Got type {str(type(model_instance))}")
     cred = super(CredentialsProperty,
                  self).get_value_for_datastore(model_instance)
-    if cred is None:
-      cred = ''
-    else:
-      cred = cred.to_json()
+    cred = '' if cred is None else cred.to_json()
     return db.Blob(cred)
 
   # For reading from datastore.
   def make_value_from_datastore(self, value):
-    logger.info("make: Got type " + str(type(value)))
+    logger.info(f"make: Got type {str(type(value))}")
     if value is None:
       return None
     if len(value) == 0:
@@ -231,7 +226,7 @@ class CredentialsProperty(db.Property):
 
   def validate(self, value):
     value = super(CredentialsProperty, self).validate(value)
-    logger.info("validate: Got type " + str(type(value)))
+    logger.info(f"validate: Got type {str(type(value))}")
     if value is not None and not isinstance(value, Credentials):
       raise db.BadValueError('Property %s must be convertible '
                           'to a Credentials instance (%s)' %
@@ -273,8 +268,7 @@ class StorageByKeyName(Storage):
       oauth2client.Credentials
     """
     if self._cache:
-      json = self._cache.get(self._key_name)
-      if json:
+      if json := self._cache.get(self._key_name):
         return Credentials.new_from_json(json)
 
     credential = None
@@ -335,7 +329,7 @@ def _build_state_value(request_handler, user):
   uri = request_handler.request.url
   token = xsrfutil.generate_token(xsrf_secret_key(), user.user_id(),
                                   action_id=str(uri))
-  return  uri + ':' + token
+  return f'{uri}:{token}'
 
 
 def _parse_state_value(state, user):
@@ -582,16 +576,17 @@ class OAuth2Decorator(object):
     """
     decorator = self
 
+
+
     class OAuth2Handler(webapp.RequestHandler):
       """Handler for the redirect_uri of the OAuth 2.0 dance."""
 
       @login_required
       def get(self):
-        error = self.request.get('error')
-        if error:
+        if error := self.request.get('error'):
           errormsg = self.request.get('error_description', error)
           self.response.out.write(
-              'The authorization request failed: %s' % _safe_html(errormsg))
+              f'The authorization request failed: {_safe_html(errormsg)}')
         else:
           user = users.get_current_user()
           decorator._create_flow(self)
@@ -601,6 +596,7 @@ class OAuth2Decorator(object):
           redirect_uri = _parse_state_value(str(self.request.get('state')),
                                             user)
           self.redirect(redirect_uri)
+
 
     return OAuth2Handler
 

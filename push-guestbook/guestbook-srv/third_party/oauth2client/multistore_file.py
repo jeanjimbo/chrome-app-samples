@@ -306,9 +306,8 @@ class _MultiStore(object):
 
     The multistore must be locked.
     """
-    raw_data = {'file_version': 1}
     raw_creds = []
-    raw_data['data'] = raw_creds
+    raw_data = {'file_version': 1, 'data': raw_creds}
     for (cred_key, cred) in self._data.items():
       raw_key = {
           'clientId': cred_key[0],

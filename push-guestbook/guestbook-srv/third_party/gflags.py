@@ -421,7 +421,7 @@ def _GetCallingModuleObjectAndName():
   """
   # Walk down the stack to find the first globals dict that's not ours.
   for depth in range(1, sys.getrecursionlimit()):
-    if not sys._getframe(depth).f_globals is globals():
+    if sys._getframe(depth).f_globals is not globals():
       globals_for_frame = sys._getframe(depth).f_globals
       module, module_name = _GetModuleObjectAndName(globals_for_frame)
       if module_name is not None:
@@ -495,8 +495,7 @@ class DuplicateFlagError(DuplicateFlag):
     else:
       second_module = other_flag_values.FindModuleDefiningFlag(
           flagname, default='<unknown>')
-    msg = "The flag '%s' is defined twice. First from %s, Second from %s" % (
-        self.flagname, first_module, second_module)
+    msg = f"The flag '{self.flagname}' is defined twice. First from {first_module}, Second from {second_module}"
     DuplicateFlag.__init__(self, msg)
 
 
@@ -521,8 +520,7 @@ class UnrecognizedFlagError(UnrecognizedFlag):
   def __init__(self, flagname, flagvalue=''):
     self.flagname = flagname
     self.flagvalue = flagvalue
-    UnrecognizedFlag.__init__(
-        self, "Unknown command line flag '%s'" % flagname)
+    UnrecognizedFlag.__init__(self, f"Unknown command line flag '{flagname}'")
 
 # Global variable used by expvar
 _exported_flags = {}
@@ -538,11 +536,7 @@ def GetHelpWidth():
     columns = struct.unpack('hh', data)[1]
     # Emacs mode returns 0.
     # Here we assume that any value below 40 is unreasonable
-    if columns >= 40:
-      return columns
-    # Returning an int as default is fine, int(int) just return the int.
-    return int(os.getenv('COLUMNS', _help_width))
-
+    return columns if columns >= 40 else int(os.getenv('COLUMNS', _help_width))
   except (TypeError, IOError, struct.error):
     return _help_width
 
@@ -580,9 +574,7 @@ def CutCommonSpacePrefix(text):
       text_first_line = [text_lines.pop(0)]
     # Calculate length of common leading whitespace (only over content lines)
     common_prefix = os.path.commonprefix([line for line in text_lines if line])
-    space_prefix_len = len(common_prefix) - len(common_prefix.lstrip())
-    # If we have a common space prefix, drop it from all lines
-    if space_prefix_len:
+    if space_prefix_len := len(common_prefix) - len(common_prefix.lstrip()):
       for index in xrange(len(text_lines)):
         if text_lines[index]:
           text_lines[index] = text_lines[index][space_prefix_len:]
@@ -626,7 +618,7 @@ def TextWrap(text, length=None, indent='', firstline_indent=None, tabs='    '):
     line = indent
   else:
     line = firstline_indent
-    if len(firstline_indent) >= length:
+    if len(line) >= length:
       raise FlagsError('First line indent must be shorter than length')
 
   # If the callee does not care about tabs we simply convert them to
@@ -690,7 +682,7 @@ def TextWrap(text, length=None, indent='', firstline_indent=None, tabs='    '):
         line = indent
       # Default case, simply append the word and a space
       if word:
-        line += word + ' '
+        line += f'{word} '
     # End of input line. If we have content we finish the line. If the
     # current line is just the indent but we had content in during this
     # original line then we need to add an empty line.
@@ -1114,12 +1106,7 @@ class FlagValues:
       return True
     # Check whether flag_obj is registered under its short name.
     short_name = flag_obj.short_name
-    if (short_name is not None and
-        flag_dict.get(short_name, None) == flag_obj):
-      return True
-    # The flag cannot be registered under any other name, so we do not
-    # need to do a full search through the values of self.FlagDict().
-    return False
+    return short_name is not None and flag_dict.get(short_name, None) == flag_obj
 
   def __delattr__(self, flag_name):
     """Deletes a previously-defined flag from a flag object.
@@ -1360,9 +1347,7 @@ class FlagValues:
     """Generates a help string for all known flags."""
     helplist = []
 
-    flags_by_module = self.FlagsByModuleDict()
-    if flags_by_module:
-
+    if flags_by_module := self.FlagsByModuleDict():
       modules = sorted(flags_by_module)
 
       # Print the help for the main module first, if possible.
@@ -1391,12 +1376,11 @@ class FlagValues:
     if not isinstance(module, str):
       module = module.__name__
     output_lines.append('\n%s%s:' % (prefix, module))
-    self.__RenderFlagList(flags, output_lines, prefix + "  ")
+    self.__RenderFlagList(flags, output_lines, f"{prefix}  ")
 
   def __RenderOurModuleFlags(self, module, output_lines, prefix=""):
     """Generates a help string for a given module."""
-    flags = self._GetFlagsDefinedByModule(module)
-    if flags:
+    if flags := self._GetFlagsDefinedByModule(module):
       self.__RenderModuleFlags(module, flags, output_lines, prefix)
 
   def __RenderOurModuleKeyFlags(self, module, output_lines, prefix=""):
@@ -1408,8 +1392,7 @@ class FlagValues:
         lines will be appended to this list.
       prefix: A string that is prepended to each generated help line.
     """
-    key_flags = self._GetKeyFlagsForModule(module)
-    if key_flags:
+    if key_flags := self._GetKeyFlagsForModule(module):
       self.__RenderModuleFlags(module, key_flags, output_lines, prefix)
 
   def ModuleHelp(self, module):
@@ -1450,24 +1433,19 @@ class FlagValues:
       if flag in flagset: continue
       flagset[flag] = 1
       flaghelp = ""
-      if flag.short_name: flaghelp += "-%s," % flag.short_name
-      if flag.boolean:
-        flaghelp += "--[no]%s" % flag.name + ":"
-      else:
-        flaghelp += "--%s" % flag.name + ":"
+      if flag.short_name:
+        flaghelp += f"-{flag.short_name},"
+      flaghelp += f"--[no]{flag.name}:" if flag.boolean else f"--{flag.name}:"
       flaghelp += "  "
       if flag.help:
         flaghelp += flag.help
-      flaghelp = TextWrap(flaghelp, indent=prefix+"  ",
-                          firstline_indent=prefix)
+      flaghelp = TextWrap(flaghelp, indent=f"{prefix}  ", firstline_indent=prefix)
       if flag.default_as_str:
         flaghelp += "\n"
-        flaghelp += TextWrap("(default: %s)" % flag.default_as_str,
-                             indent=prefix+"  ")
+        flaghelp += TextWrap(f"(default: {flag.default_as_str})", indent=f"{prefix}  ")
       if flag.parser.syntactic_help:
         flaghelp += "\n"
-        flaghelp += TextWrap("(%s)" % flag.parser.syntactic_help,
-                             indent=prefix+"  ")
+        flaghelp += TextWrap(f"({flag.parser.syntactic_help})", indent=f"{prefix}  ")
       output_lines.append(flaghelp)
 
   def get(self, name, default):
@@ -1479,10 +1457,7 @@ class FlagValues:
     """
 
     value = self.__getattr__(name)
-    if value is not None:  # Can't do if not value, b/c value might be '0' or ""
-      return value
-    else:
-      return default
+    return value if value is not None else default
 
   def ShortestUniquePrefixes(self, fl):
     """Returns: dictionary; maps flag names to their shortest unique prefix."""
@@ -1491,7 +1466,7 @@ class FlagValues:
     for name, flag in fl.items():
       sorted_flags.append(name)
       if flag.boolean:
-        sorted_flags.append('no%s' % name)
+        sorted_flags.append(f'no{name}')
     sorted_flags.sort()
 
     # For each name in the sorted list, determine the shortest unique
@@ -1547,7 +1522,7 @@ class FlagValues:
     elif flagfile_str.startswith('-flagfile='):
       return os.path.expanduser((flagfile_str[(len('-flagfile=')):]).strip())
     else:
-      raise FlagsError('Hit illegal --flagfile type: %s' % flagfile_str)
+      raise FlagsError(f'Hit illegal --flagfile type: {flagfile_str}')
 
   def __GetFlagFileLines(self, filename, parsed_file_list):
     """Returns the useful (!=comments, etc) lines from a file with flags.
@@ -1647,7 +1622,7 @@ class FlagValues:
       if self.__IsFlagFileDirective(current_arg):
         # This handles the case of -(-)flagfile foo.  In this case the
         # next arg really is part of this one.
-        if current_arg == '--flagfile' or current_arg == '-flagfile':
+        if current_arg in ['--flagfile', '-flagfile']:
           if not rest_of_args:
             raise IllegalFlagValue('--flagfile with no argument')
           flag_filename = os.path.expanduser(rest_of_args[0])
@@ -1681,11 +1656,8 @@ class FlagValues:
     NOTE: MUST mirror the behavior of the C++ CommandlineFlagsIntoString
     from http://code.google.com/p/google-gflags
     """
-    s = ''
-    for flag in self.FlagDict().values():
-      if flag.value is not None:
-        s += flag.Serialize() + '\n'
-    return s
+    return ''.join(flag.Serialize() + '\n' for flag in self.FlagDict().values()
+                   if flag.value is not None)
 
   def AppendFlagsIntoFile(self, filename):
     """Appends all flags assignments from this FlagInfo object to a file.
@@ -1695,9 +1667,8 @@ class FlagValues:
     NOTE: MUST mirror the behavior of the C++ AppendFlagsIntoFile
     from http://code.google.com/p/google-gflags
     """
-    out_file = open(filename, 'a')
-    out_file.write(self.FlagsIntoString())
-    out_file.close()
+    with open(filename, 'a') as out_file:
+      out_file.write(self.FlagsIntoString())
 
   def WriteHelpInXMLFormat(self, outfile=None):
     """Outputs flag documentation in XML format.
@@ -1732,8 +1703,7 @@ class FlagValues:
 
     # Sort flags by declaring module name and next by flag name.
     flags_by_module = self.FlagsByModuleDict()
-    all_module_names = list(flags_by_module.keys())
-    all_module_names.sort()
+    all_module_names = sorted(flags_by_module.keys())
     for module_name in all_module_names:
       flag_list = [(f.name, f) for f in flags_by_module[module_name]]
       flag_list.sort()
@@ -1864,9 +1834,7 @@ class Flag:
     return self is other
 
   def __lt__(self, other):
-    if isinstance(other, Flag):
-      return id(self) < id(other)
-    return NotImplemented
+    return id(self) < id(other) if isinstance(other, Flag) else NotImplemented
 
   def __GetParsedValueAsString(self, value):
     if value is None:
@@ -1874,10 +1842,7 @@ class Flag:
     if self.serializer:
       return repr(self.serializer.Serialize(value))
     if self.boolean:
-      if value:
-        return repr('true')
-      else:
-        return repr('false')
+      return repr('true') if value else repr('false')
     return repr(_StrOrUnicode(value))
 
   def Parse(self, argument):
@@ -1898,14 +1863,10 @@ class Flag:
     if self.value is None:
       return ''
     if self.boolean:
-      if self.value:
-        return "--%s" % self.name
-      else:
-        return "--no%s" % self.name
-    else:
-      if not self.serializer:
-        raise FlagsError("Serializer not present for flag %s" % self.name)
-      return "--%s=%s" % (self.name, self.serializer.Serialize(self.value))
+      return f"--{self.name}" if self.value else f"--no{self.name}"
+    if not self.serializer:
+      raise FlagsError(f"Serializer not present for flag {self.name}")
+    return f"--{self.name}={self.serializer.Serialize(self.value)}"
 
   def SetDefault(self, value):
     """Changes the default value (and current value too) for this Flag."""
@@ -1950,7 +1911,7 @@ class Flag:
       indent: A string that is prepended to each generated line.
     """
     outfile.write(indent + '<flag>\n')
-    inner_indent = indent + '  '
+    inner_indent = f'{indent}  '
     if is_key:
       _WriteSimpleXMLElement(outfile, 'key', 'yes', inner_indent)
     _WriteSimpleXMLElement(outfile, 'file', module_name, inner_indent)
@@ -1995,7 +1956,7 @@ class _ArgumentParserCache(type):
 
   _instances = {}
 
-  def __call__(mcs, *args, **kwargs):
+  def __call__(self, *args, **kwargs):
     """Returns an instance of the argument parser cls.
 
     This method overrides behavior of the __new__ methods in
@@ -2015,19 +1976,18 @@ class _ArgumentParserCache(type):
       An instance of cls, shared or new.
     """
     if kwargs:
-      return type.__call__(mcs, *args, **kwargs)
-    else:
-      instances = mcs._instances
-      key = (mcs,) + tuple(args)
-      try:
-        return instances[key]
-      except KeyError:
+      return type.__call__(self, *args, **kwargs)
+    instances = self._instances
+    key = (self, ) + tuple(args)
+    try:
+      return instances[key]
+    except KeyError:
         # No cache entry for key exists, create a new one.
-        return instances.setdefault(key, type.__call__(mcs, *args))
-      except TypeError:
+      return instances.setdefault(key, type.__call__(self, *args))
+    except TypeError:
         # An object in args cannot be hashed, always return
         # a new instance.
-        return type.__call__(mcs, *args)
+      return type.__call__(self, *args)
 
 
 class ArgumentParser(object):
@@ -2120,10 +2080,12 @@ def MarkFlagAsRequired(flag_name, flag_values=FLAGS):
   Raises:
     AttributeError: if flag_name is not registered as a valid flag name.
   """
-  RegisterValidator(flag_name,
-                    lambda value: value is not None,
-                    message='Flag --%s must be specified.' % flag_name,
-                    flag_values=flag_values)
+  RegisterValidator(
+      flag_name,
+      lambda value: value is not None,
+      message=f'Flag --{flag_name} must be specified.',
+      flag_values=flag_values,
+  )
 
 
 def _RegisterBoundsValidatorIfNeeded(parser, name, flag_values):
@@ -2139,7 +2101,7 @@ def _RegisterBoundsValidatorIfNeeded(parser, name, flag_values):
 
     def Checker(value):
       if value is not None and parser.IsOutsideBounds(value):
-        message = '%s is not %s' % (value, parser.syntactic_help)
+        message = f'{value} is not {parser.syntactic_help}'
         raise gflags_validators.Error(message)
       return True
 
@@ -2283,8 +2245,7 @@ def ADOPT_module_key_flags(module, flag_values=FLAGS):
   # isinstance(module, types.ModuleType) but I didn't want to import
   # types for such a tiny use.
   if isinstance(module, str):
-    raise FlagsError('Received module name %s; expected a module object.'
-                     % module)
+    raise FlagsError(f'Received module name {module}; expected a module object.')
   _InternalDeclareKeyFlags(
       [f.name for f in flag_values._GetKeyFlagsForModule(module.__name__)],
       flag_values=flag_values)
@@ -2338,8 +2299,7 @@ class BooleanParser(ArgumentParser):
     raise ValueError('Non-boolean argument to boolean flag', argument)
 
   def Parse(self, argument):
-    val = self.Convert(argument)
-    return val
+    return self.Convert(argument)
 
   def Type(self):
     return 'bool'
@@ -2450,7 +2410,7 @@ class NumericParser(ArgumentParser):
   def Parse(self, argument):
     val = self.Convert(argument)
     if self.IsOutsideBounds(val):
-      raise ValueError("%s is not %s" % (val, self.syntactic_help))
+      raise ValueError(f"{val} is not {self.syntactic_help}")
     return val
 
   def WriteCustomInfoInXMLFormat(self, outfile, indent):
@@ -2485,15 +2445,15 @@ class FloatParser(NumericParser):
     self.upper_bound = upper_bound
     sh = self.syntactic_help
     if lower_bound is not None and upper_bound is not None:
-      sh = ("%s in the range [%s, %s]" % (sh, lower_bound, upper_bound))
+      sh = f"{sh} in the range [{lower_bound}, {upper_bound}]"
     elif lower_bound == 0:
-      sh = "a non-negative %s" % self.number_name
+      sh = f"a non-negative {self.number_name}"
     elif upper_bound == 0:
-      sh = "a non-positive %s" % self.number_name
+      sh = f"a non-positive {self.number_name}"
     elif upper_bound is not None:
-      sh = "%s <= %s" % (self.number_name, upper_bound)
+      sh = f"{self.number_name} <= {upper_bound}"
     elif lower_bound is not None:
-      sh = "%s >= %s" % (self.number_name, lower_bound)
+      sh = f"{self.number_name} >= {lower_bound}"
     self.syntactic_help = sh
 
   def Convert(self, argument):
@@ -2537,30 +2497,28 @@ class IntegerParser(NumericParser):
     self.upper_bound = upper_bound
     sh = self.syntactic_help
     if lower_bound is not None and upper_bound is not None:
-      sh = ("%s in the range [%s, %s]" % (sh, lower_bound, upper_bound))
+      sh = f"{sh} in the range [{lower_bound}, {upper_bound}]"
     elif lower_bound == 1:
-      sh = "a positive %s" % self.number_name
+      sh = f"a positive {self.number_name}"
     elif upper_bound == -1:
-      sh = "a negative %s" % self.number_name
+      sh = f"a negative {self.number_name}"
     elif lower_bound == 0:
-      sh = "a non-negative %s" % self.number_name
+      sh = f"a non-negative {self.number_name}"
     elif upper_bound == 0:
-      sh = "a non-positive %s" % self.number_name
+      sh = f"a non-positive {self.number_name}"
     elif upper_bound is not None:
-      sh = "%s <= %s" % (self.number_name, upper_bound)
+      sh = f"{self.number_name} <= {upper_bound}"
     elif lower_bound is not None:
-      sh = "%s >= %s" % (self.number_name, lower_bound)
+      sh = f"{self.number_name} >= {lower_bound}"
     self.syntactic_help = sh
 
   def Convert(self, argument):
     __pychecker__ = 'no-returnvalues'
-    if type(argument) == str:
-      base = 10
-      if len(argument) > 2 and argument[0] == "0" and argument[1] == "x":
-        base = 16
-      return int(argument, base)
-    else:
+    if type(argument) != str:
       return int(argument)
+    base = (16 if len(argument) > 2 and argument[0] == "0" and argument[1] == "x"
+            else 10)
+    return int(argument, base)
 
   def Type(self):
     return 'int'
@@ -2596,8 +2554,7 @@ class EnumParser(ArgumentParser):
 
   def Parse(self, argument):
     if self.enum_values and argument not in self.enum_values:
-      raise ValueError("value should be one of <%s>" %
-                       "|".join(self.enum_values))
+      raise ValueError(f'value should be one of <{"|".join(self.enum_values)}>')
     return argument
 
   def Type(self):
@@ -2614,7 +2571,7 @@ class EnumFlag(Flag):
     g = ArgumentSerializer()
     Flag.__init__(self, p, g, name, default, help, short_name, **args)
     if not self.help: self.help = "an enum string"
-    self.help = "<%s>: %s" % ("|".join(enum_values), self.help)
+    self.help = f'<{"|".join(enum_values)}>: {self.help}'
 
   def _WriteCustomInfoInXMLFormat(self, outfile, indent):
     for enum_value in self.parser.enum_values:
@@ -2649,7 +2606,7 @@ class BaseListParser(ArgumentParser):
     super(BaseListParser, self).__init__()
     self._token = token
     self._name = name
-    self.syntactic_help = "a %s separated list" % self._name
+    self.syntactic_help = f"a {self._name} separated list"
 
   def Parse(self, argument):
     if isinstance(argument, list):
@@ -2660,7 +2617,7 @@ class BaseListParser(ArgumentParser):
       return [s.strip() for s in argument.split(self._token)]
 
   def Type(self):
-    return '%s separated list of strings' % self._name
+    return f'{self._name} separated list of strings'
 
 
 class ListParser(BaseListParser):
@@ -2682,8 +2639,7 @@ class WhitespaceSeparatedListParser(BaseListParser):
 
   def WriteCustomInfoInXMLFormat(self, outfile, indent):
     BaseListParser.WriteCustomInfoInXMLFormat(self, outfile, indent)
-    separators = list(string.whitespace)
-    separators.sort()
+    separators = sorted(string.whitespace)
     for ws_char in string.whitespace:
       _WriteSimpleXMLElement(outfile, 'list_separator', repr(ws_char), indent)
 
@@ -2745,13 +2701,7 @@ class MultiFlag(Flag):
       # processing simpler below.
       arguments = [arguments]
 
-    if self.present:
-      # keep a backup reference to list of previously supplied option values
-      values = self.value
-    else:
-      # "erase" the defaults with an empty list
-      values = []
-
+    values = self.value if self.present else []
     for item in arguments:
       # have Flag superclass parse argument, overwriting self.value reference
       Flag.Parse(self, item)  # also increments self.present
@@ -2762,7 +2712,7 @@ class MultiFlag(Flag):
 
   def Serialize(self):
     if not self.serializer:
-      raise FlagsError("Serializer not present for flag %s" % self.name)
+      raise FlagsError(f"Serializer not present for flag {self.name}")
     if self.value is None:
       return ''
 
@@ -2779,7 +2729,7 @@ class MultiFlag(Flag):
     return s
 
   def Type(self):
-    return 'multi ' + self.parser.Type()
+    return f'multi {self.parser.Type()}'
 
 
 def DEFINE_multi(parser, serializer, name, default, help, flag_values=FLAGS,
